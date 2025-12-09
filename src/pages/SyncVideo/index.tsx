@@ -119,11 +119,14 @@ const SyncVideoPage: React.FC = () => {
      * @returns
      */
     const handleWaiting = () => {
+      console.log(
+        `处于缓冲,isRemoteUpdate:${isRemoteUpdate.current},isBuffering:${isBuffering.current}`,
+      );
       if (isRemoteUpdate.current) return;
 
       // 标记为缓冲状态
       isBuffering.current = true;
-      console.log('缓冲暂停');
+
       // 发送暂停指令
       wsRef.current?.send(
         JSON.stringify({ cmd: 'pause', ts: videoEl.currentTime }),
@@ -246,13 +249,13 @@ const SyncVideoPage: React.FC = () => {
           break;
         case 'play':
           if (videoEl && msg.ts !== undefined) {
-            // 【关键修改 3】加锁
-            isRemoteUpdate.current = true;
-            // // 允许 0.5 秒的误差，避免频繁 seek 导致卡顿
+            isRemoteUpdate.current = true; //加锁
+            // // 允许 0.3 秒的误差，避免频繁 seek 导致卡顿
             // if (Math.abs(videoEl.currentTime - msg.ts) > 0.5) {
             //     videoEl.currentTime = msg.ts;
             // }
             // 时间误差修正
+            console.log('时间误差：', videoEl.currentTime - msg.ts);
             if (
               msg.ts !== undefined &&
               Math.abs(videoEl.currentTime - msg.ts) > 0.3
@@ -271,7 +274,9 @@ const SyncVideoPage: React.FC = () => {
           break;
         case 'pause':
           if (videoEl) {
+            console.log(`是否暂停:${isBuffering.current}`);
             if (isBuffering.current) return;
+
             isRemoteUpdate.current = true;
 
             videoEl.pause();
