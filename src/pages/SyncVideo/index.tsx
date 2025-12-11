@@ -1,7 +1,7 @@
 import { PageContainer } from '@ant-design/pro-components';
 import { Button, Card, Form, Input, message, Switch } from 'antd';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Player } from 'video-react'; // 注意类型引用
+import { Player, PlayerReference } from 'video-react'; // 注意类型引用
 import 'video-react/dist/video-react.css';
 import UrlList from '../PlayList/urlList';
 
@@ -44,17 +44,15 @@ const SyncVideoPage: React.FC = () => {
   const [isAllReady, setIsAllReady] = useState(false); // 【新增】标记是否全员准备就绪
   // 用于通知子组件表格刷新
   const [refreshQueueTrigger, setRefreshQueueTrigger] = useState(0);
-  // Refs
-  // Player 的类型根据 video-react 文档，通常是 Component 或者有特定的 Ref 类型
-  // 这里假设 video-react 的 Player 暴露了 internalPlayer 或者类似的 video 元素访问方式
-  // 如果 video-react 的 ref 不好用，原生 <video> 也是完全可以的
+
   const playerRef = useRef<any>(null);
   const wsRef = useRef<WebSocket | null>(null);
 
-  // true 代表正在处理服务器传来的同步指令，此时不要触发发送
+  // 同步锁：当前是否正在处理服务器传来的同步指令（此时不要触发发送）
   const isRemoteUpdate = useRef(false); //同步锁
   //缓冲状态锁：视频是否是因为缓冲而暂停
   const isBuffering = useRef(false);
+  const bufferTimeOut = useRef<NodeJS.Timeout>();
   // 初始化加载本地存储
   useEffect(() => {
     const cachedPwd = localStorage.getItem('roomPwd');
@@ -64,10 +62,10 @@ const SyncVideoPage: React.FC = () => {
   }, []);
 
   // 监听播放器的原生事件
-  // 这样无论是点自带按钮，还是拖进度条，都能同步
   useEffect(() => {
     // video-react 的底层 HTMLVideoElement 对象
     const videoEl = playerRef.current?.video?.video as HTMLVideoElement;
+    //正常应该以
 
     if (!videoEl || !isConnected) return;
 
@@ -79,9 +77,9 @@ const SyncVideoPage: React.FC = () => {
      * @returns
      */
     const handlePause = () => {
-      console.log('来自远程的暂停', isRemoteUpdate.current);
+      if (bufferTimeOut.current) clearTimeout(bufferTimeOut.current);
+
       if (isRemoteUpdate.current) return;
-      console.log('当前的缓冲状态', isBuffering.current);
       //当前是缓冲状态，则handlewaiting已经广播pause了，直接跳过。
       if (isBuffering.current) return;
 
@@ -98,6 +96,7 @@ const SyncVideoPage: React.FC = () => {
      * @returns
      */
     const handleSeeked = () => {
+      if (bufferTimeOut.current) clearTimeout(bufferTimeOut.current);
       if (isRemoteUpdate.current) {
         // 这是一个由服务器命令触发的 seek，重置锁，不发送消息
         isRemoteUpdate.current = false;
@@ -119,18 +118,18 @@ const SyncVideoPage: React.FC = () => {
      * @returns
      */
     const handleWaiting = () => {
-      console.log(
-        `处于缓冲,isRemoteUpdate:${isRemoteUpdate.current},isBuffering:${isBuffering.current}`,
-      );
       if (isRemoteUpdate.current) return;
 
       // 标记为缓冲状态
       isBuffering.current = true;
 
-      // 发送暂停指令
-      wsRef.current?.send(
-        JSON.stringify({ cmd: 'pause', ts: videoEl.currentTime }),
-      );
+      //缓冲如果在一秒内完毕则不发送广播
+      bufferTimeOut.current = setTimeout(() => {
+        // 发送暂停指令
+        wsRef.current?.send(
+          JSON.stringify({ cmd: 'pause', ts: videoEl.currentTime }),
+        );
+      }, 1000);
     };
 
     /**
@@ -141,7 +140,8 @@ const SyncVideoPage: React.FC = () => {
      * 3. 远程指令触发的播放（不应发送广播）：缓冲完成后已经广播一次paly，这里会再广播paly导致循环触发
      *  */
     const handlePlaying = () => {
-      console.log('来自远程的播放', isRemoteUpdate.current);
+      //如果是从缓冲恢复播放，清除缓冲的广播定时器
+      if (bufferTimeOut.current) clearTimeout(bufferTimeOut.current);
       //拦截远程指令触发的 playing 事件
       if (isRemoteUpdate.current) return;
 
@@ -262,14 +262,16 @@ const SyncVideoPage: React.FC = () => {
             ) {
               videoEl.currentTime = msg.ts;
             }
+
             await videoEl
               .play()
-              .catch((e) => console.log('自动播放被拦截:', e));
-
-            // 稍微延时解锁，因为 play() 是异步的，可能稍后才触发事件
-            setTimeout(() => {
-              isRemoteUpdate.current = false;
-            }, 500);
+              .then(() => {
+                isRemoteUpdate.current = false;
+              })
+              .catch((e) => {
+                isRemoteUpdate.current = false;
+                console.log('自动播放被拦截:', e);
+              });
           }
           break;
         case 'pause':
@@ -319,7 +321,7 @@ const SyncVideoPage: React.FC = () => {
         case 'user_leave':
           message.info('有用户离开了房间');
           break;
-        // 【新增】处理切换视频指令
+        // 处理切换视频指令
         case 'change_video':
           if (msg.video) {
             // const targetUrl = identity ? msg.video.masterUrl : msg.video.guestUrl;
@@ -339,6 +341,8 @@ const SyncVideoPage: React.FC = () => {
 
             // 4. 重置播放器时间 (可选，因为换源后通常也是从0开始)
             if (videoEl) videoEl.currentTime = 0;
+
+            (playerRef.current as PlayerReference).load();
           }
           setIsAllReady(false); // 切视频必定导致未准备
           break;
@@ -491,7 +495,7 @@ const SyncVideoPage: React.FC = () => {
             </div>
           )}
 
-          <Player ref={playerRef} key={url}>
+          <Player ref={playerRef} key="Player">
             <source src={url} />
           </Player>
         </div>

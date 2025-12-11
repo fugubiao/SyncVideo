@@ -10,6 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
+import time
 
 # ====== 内存数据库 ======
 rooms = {}          # {room_id: Room}
@@ -23,6 +24,7 @@ class Room:
         self.ready_set = set() # 已准备的客户端集合
         self.playing = False   # 播放状态
         self.current_ts = 0.0   # 当前时间戳
+        self.last_update_sys_time = 0.0 # 记录最后一次操作的系统时间
 
 class VideoItem(BaseModel):
     id: Optional[str] = None          # 新增时不传；修改时必传
@@ -156,13 +158,18 @@ async def websocket_endpoint(ws: WebSocket):
                 room.clients.add(ws)
                 client_room[ws] = room_id
                 
+                real_ts = room.current_ts
+                if room.playing:
+                    # 如果正在播放，当前进度 = 记录的进度 + (当前系统时间 - 上次更新系统时间)
+                    real_ts += (time.time() - room.last_update_sys_time)
+
                 # 发送当前状态
                 await ws.send_json({
                     "cmd": "joined", 
                     "room_id": room_id, 
                     "queue": room.queue, 
                     "playing": room.playing, 
-                    "ts": room.current_ts
+                    "ts": room.real_ts
                 })
 
             # ---------- 准备确认 ----------
@@ -175,8 +182,7 @@ async def websocket_endpoint(ws: WebSocket):
                     
                     if len(room.ready_set) == len(room.clients) and len(room.clients) >= 1:
                         room.playing = True
-                        room.current_ts = 0.0 # 开始播放从 0 开始，或者你可以改成保留进度
-                        await broadcast(room_id, {"cmd": "play", "ts": 0}) # 这里的 0 可以改成 room.current_ts
+                        await broadcast(room_id, {"cmd": "play", "ts": room.current_ts}) 
             #---------- 取消准备 ----------
             elif cmd == "unready":
                 if ws in client_room:
@@ -203,6 +209,8 @@ async def websocket_endpoint(ws: WebSocket):
                     if "ts" in data:
                         room.current_ts = float(data["ts"])
                     
+                    # 关键：更新系统时间锚点
+                    room.last_update_sys_time = time.time()
                     await broadcast(room_id, {"cmd": cmd, "ts": room.current_ts})
 
             # ---------- 切换视频 (修复 Bug 1: 准备状态未重置) ----------
