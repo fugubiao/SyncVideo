@@ -45,7 +45,7 @@ const SyncVideoPage: React.FC = () => {
   }, [identity]);
   const [isConnected, setIsConnected] = useState(false); // 连接状态
   const [isReady, setIsReady] = useState(false); // 自己的准备状态
-  const [isAllReady, setIsAllReady] = useState(false); // 【新增】标记是否全员准备就绪
+  const [isAllReady, setIsAllReady] = useState(false); // 是否全员准备就绪
   // 用于通知子组件表格刷新
   const [refreshQueueTrigger, setRefreshQueueTrigger] = useState(0);
 
@@ -250,7 +250,9 @@ const SyncVideoPage: React.FC = () => {
         ws.onclose = () => {
           console.log('连接已关闭');
           setIsConnected(false);
+          setUrl(undefined);
           setIsReady(false);
+          setIsAllReady(false);
           wsRef.current = null;
         };
 
@@ -373,7 +375,14 @@ const SyncVideoPage: React.FC = () => {
         message.error('加入房间失败，请检查网络或稍后重试');
         return;
       });
-  }, [roomName, pwd, message, identity]);
+
+    return () => {
+      if (playerRef.current) {
+        playerRef.current.pause();
+        playerRef.current = null;
+      }
+    };
+  }, [roomName, pwd, message, identity, playerRef, url]);
 
   // 组件卸载时断开连接
   useEffect(() => {
@@ -461,7 +470,14 @@ const SyncVideoPage: React.FC = () => {
                   加入房间
                 </Button>
               ) : (
-                <Button danger onClick={() => wsRef.current?.close()} block>
+                <Button
+                  danger
+                  onClick={() => {
+                    wsRef.current?.close();
+                    setUrl(undefined);
+                  }}
+                  block
+                >
                   退出房间
                 </Button>
               )}
@@ -486,9 +502,13 @@ const SyncVideoPage: React.FC = () => {
         </div>
       </Card>
 
-      <Card title="同步播放器">
+      <Card
+        title="同步播放器"
+        style={{
+          visibility: url === undefined || url === null ? 'hidden' : 'visible',
+        }}
+      >
         <div style={{ position: 'relative' }}>
-          {/* 【新增】权限控制遮罩层 */}
           {/* 只有连接了ws，且没有全员准备好，才显示遮罩禁止操作 */}
           {isConnected && !isAllReady && (
             <div
@@ -544,7 +564,7 @@ const SyncVideoPage: React.FC = () => {
             onChange={toggleReady}
             disabled={!isConnected}
           />
-          {/* 只有全员准备好了，才允许点击这些按钮（或者你也可以依赖遮罩层挡住） */}
+          {/* 只有全员准备好了，才允许点击这些按钮 */}
           <Button
             onClick={() => handleSendControl('play')}
             disabled={!isConnected || !isAllReady}

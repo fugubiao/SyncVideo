@@ -1,3 +1,4 @@
+import FloatingDiv from '@/components/stroll';
 import RoomService from '@/services/Room';
 import { PlusOutlined } from '@ant-design/icons';
 import {
@@ -12,13 +13,15 @@ import {
 import { Button, InputNumber, message, Popconfirm, Tag } from 'antd';
 import { FormInstance } from 'antd/lib';
 import { useCallback, useRef, useState } from 'react';
-
 const RoomPage: React.FC = () => {
   const formRef = useRef<FormInstance>();
   const actionRef = useRef<ActionType>();
   const [open, setopen] = useState<boolean>(false);
   const [isUpdate, setIsUpdate] = useState<boolean>(false);
-
+  const [float, setFloat] = useState<boolean>(true);
+  const CloseFloat = useCallback(() => {
+    setFloat(false);
+  }, []);
   const Create = useCallback(() => {
     setIsUpdate(false);
     setopen(true);
@@ -95,7 +98,18 @@ const RoomPage: React.FC = () => {
 
   return (
     <PageContainer>
-      <ProTable
+      {float && (
+        <FloatingDiv
+          content={
+            <div>
+              <div>当前处于测试阶段</div>
+              <div>不限制房间权限</div>
+            </div>
+          }
+          onClick={CloseFloat}
+        />
+      )}
+      <ProTable<Rooms>
         rowKey="Room_id"
         key="RoomPage"
         actionRef={actionRef}
