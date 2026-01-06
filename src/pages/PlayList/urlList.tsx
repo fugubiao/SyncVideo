@@ -1,3 +1,4 @@
+import PlayServicer from '@/services/PlayList';
 import { PlusOutlined } from '@ant-design/icons';
 import {
   ActionType,
@@ -8,20 +9,18 @@ import {
   ProTable,
 } from '@ant-design/pro-components';
 import { Button, message, Popconfirm, Tag } from 'antd';
-import axios from 'axios';
-import { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 
 const UrlList: React.FC<{
-  roomId: string | number;
+  roomID: React.Key;
   onPlayer?: (video: playItem) => void;
   refreshTrigger?: number;
-}> = ({ roomId, onPlayer, refreshTrigger }) => {
+}> = ({ roomID, onPlayer, refreshTrigger }) => {
   const [open, setOpen] = useState(false);
-  const [modalTitle, setModalTitle] = useState('添加视频');
-  const formRef = useRef<ProFormInstance>();
+  const formRef = useRef<ProFormInstance<playItem>>();
   const actionRef = useRef<ActionType>();
   const [currenMaxPriority, setPriority] = useState(0);
-  const [currentrow, setCurrentrow] = useState<playItem>();
+  const [isUpdate, setIsUpdate] = useState<boolean>(false);
 
   // 【新增】监听 refreshTrigger 变化，自动刷新表格
   useEffect(() => {
@@ -33,9 +32,8 @@ const UrlList: React.FC<{
   const columns: ProColumns<playItem>[] = [
     {
       title: '视频标题',
-      dataIndex: 'title',
-      key: 'title',
-      search: false,
+      dataIndex: 'Title',
+      key: 'Title',
     },
     {
       title: '播放优先级',
@@ -46,32 +44,32 @@ const UrlList: React.FC<{
     {
       title: '房主视频地址',
       copyable: true,
-      dataIndex: 'masterUrl',
-      key: 'masterUrl',
+      dataIndex: 'MasterUrl',
+      key: 'MasterUrl',
       ellipsis: true,
       search: false,
     },
     {
       title: '房客视频地址',
       copyable: true,
-      dataIndex: 'guestUrl',
-      key: 'guestUrl',
+      dataIndex: 'GuestUrl',
+      key: 'GuestUrl',
       ellipsis: true,
       search: false,
     },
     {
-      title: '视频大小',
-      dataIndex: 'size',
-      key: 'size',
+      title: '视频大小(MB)',
+      dataIndex: 'Size',
+      key: 'Size',
       search: false,
     },
     {
       title: '状态',
-      dataIndex: 'isPlaying',
-      key: 'isPlaying',
+      dataIndex: 'IsPlayying',
+      key: 'IsPlayying',
       search: false,
       render: (_, record) =>
-        record.isPlaying ? (
+        record.IsPlayying ? (
           <Tag color="green">正在播放</Tag>
         ) : (
           <Tag color="volcano">未播放</Tag>
@@ -90,7 +88,6 @@ const UrlList: React.FC<{
               key="play"
               onClick={async () => {
                 onPlayer(record);
-                // await axios.post(`/api/room/${roomId}/queue`, {...record,isPlaying:true});
               }}
             >
               播放
@@ -99,11 +96,10 @@ const UrlList: React.FC<{
           <Popconfirm
             title="确定要删除吗？"
             onConfirm={() => {
-              axios
-                .delete(`/api/room/${roomId}/queue/${record.id}`)
-                .then(() => {
-                  actionRef.current?.reload();
-                });
+              console.log('删除记录', record.Id);
+              PlayServicer.delete(record.Id).then(() => {
+                actionRef.current?.reload();
+              });
             }}
             okText="是"
             cancelText="否"
@@ -114,11 +110,12 @@ const UrlList: React.FC<{
           <a
             key="update"
             onClick={() => {
-              setCurrentrow(record); // 记录当前行数据，供 onFinish 使用
-              setModalTitle('修改视频');
               setOpen(true);
+              setIsUpdate(true);
               // 强制回填表单数据
-              setTimeout(() => formRef.current?.setFieldsValue(record), 0);
+              // setTimeout(() => formRef.current?.setFieldsValue(record), 0);
+              formRef.current?.setFieldsValue(record);
+              console.log('强制回填表单数据', record);
               actionRef.current?.reload();
             }}
           >
@@ -129,9 +126,14 @@ const UrlList: React.FC<{
     },
   ];
 
+  const addVideo = useCallback(() => {
+    setOpen(true);
+    setIsUpdate(false);
+  }, []);
+
   return (
     <>
-      <ProTable
+      <ProTable<playItem>
         columns={columns}
         actionRef={actionRef}
         toolBarRender={() => {
@@ -140,97 +142,103 @@ const UrlList: React.FC<{
               icon={<PlusOutlined />}
               key="addvideo"
               type="primary"
-              onClick={() => {
-                setOpen(true);
-                setModalTitle('添加视频');
-              }}
+              onClick={addVideo}
             >
               添加视频
             </Button>,
           ];
         }}
-        request={async () => {
-          // 获取列表
-          const res = (await axios.get(`/api/room/${roomId}/queue`)).data;
-          if (res.data && res.data.length > 0) {
-            const maxPriority = Math.max(
-              ...res.data.map((item: playItem) => item.PlayPriority || 0),
-            );
-            setPriority(maxPriority);
-          }
-          return {
-            data: res.data,
-            total: res.data.length,
-            success: true,
+        request={async (params) => {
+          const { current, pageSize, title } = params;
+          const getParam: QueryPlayListType = {
+            pageIndex: current,
+            pageSize,
+            title,
           };
+
+          const res = await PlayServicer.get(getParam);
+
+          if (res.data.code === 200) {
+            if (res.data.list && res.data.list.length > 0) {
+              const maxPriority = Math.max(
+                ...res.data.list.map(
+                  (item: playItem) => item.PlayPriority || 0,
+                ),
+              );
+              setPriority(maxPriority);
+            }
+
+            return {
+              data: res.data.list,
+              total: res.data.total,
+            };
+          }
+
+          message.error(res.data.message);
+          return {};
         }}
         rowKey="id"
-        search={false}
-        // search={false}
-        pagination={false}
         dateFormatter="string"
-        // headerTitle="播放列表"
       ></ProTable>
-      <ModalForm
-        title={modalTitle}
+
+      <ModalForm<playItem>
+        title={isUpdate ? '修改视频' : '添加视频'}
         open={open}
         formRef={formRef}
         onOpenChange={(visible) => {
           setOpen(visible);
           if (!visible) {
-            setCurrentrow(undefined); // 关闭时清空当前选中项
             formRef.current?.resetFields();
           }
         }}
         onFinish={async (value) => {
-          // 【关键修复 1】：如果是修改模式 (currentrow 存在)，必须带上 id
-          // 【关键修复 2】：如果是修改模式，保持原有的优先级；如果是新增，才 +1
-          const isUpdate = !!currentrow?.id;
-
-          const newvalue = {
+          const newvalue: playItem = {
             ...value,
-            id: isUpdate ? currentrow.id : undefined, // 核心修复：带上ID
-            PlayPriority: isUpdate
-              ? currentrow.PlayPriority
-              : currenMaxPriority + 1,
-            isPlaying: false,
+            ...(isUpdate ? {} : { PlayPriority: currenMaxPriority + 1 }),
+            IsPlayying: false,
+            room_id: roomID,
           };
 
-          console.log(isUpdate ? '修改视频' : '添加视频', newvalue);
+          const res = isUpdate
+            ? await PlayServicer.update(newvalue)
+            : await PlayServicer.post(newvalue);
+          if (res.data.code === 200) {
+            message.success(res.data.message);
 
-          try {
-            await axios.post(`/api/room/${roomId}/queue`, newvalue);
-            message.success('操作成功');
-            // 提交成功后关闭弹窗并刷新列表
+            // 关闭弹窗并刷新列表
             setOpen(false);
-            actionRef.current?.reload(); // 假设你定义了 actionRef 用于表格刷新
+            actionRef.current?.reload();
             return true;
-          } catch (error) {
-            console.error(error);
-            return false;
           }
+          message.error(res.data.message);
+          return false;
         }}
       >
         <ProFormText
           label="视频标题"
-          name="title"
+          name="Title"
           transform={(value: string) => value.trim()}
         />
         <ProFormText
           label="房主视频URL"
-          name="masterUrl"
+          name="MasterUrl"
           transform={(value: string) => value.trim()}
         />
         <ProFormText
           label="房客视频URL"
-          name="guestUrl"
+          name="GuestUrl"
           transform={(value: string) => value.trim()}
         />
         <ProFormText
           label="视频大小"
-          name="size"
-          transform={(value: string) => value.trim()}
+          name="Size"
+          transform={(value) => Number(value)}
         />
+
+        <ProFormText name="id" hidden />
+        <ProFormText name="VersionTimestamp" hidden />
+        <ProFormText name="PlayPriority" hidden />
+        <ProFormText name="room_id" hidden />
       </ModalForm>
     </>
   );

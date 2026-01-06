@@ -12,23 +12,33 @@ export default defineConfig({
   },
   proxy: {
     '/api/': {
-      target: '	http://localhost:55061', //http://frp-sea.com:58532
+      target: 'http://localhost:5000/api/', //http://localhost:5000/api
       changeOrigin: true,
-      pathRewrite: { '^/api': '' },
+      pathRewrite: { '^/api/': '' },
     },
 
     '/ws': {
-      target: 'ws://localhost:55061', // 1. 目标只写域名，不要带 /ws
-      ws: true,
+      target: 'ws://localhost:5000', // ← 只写到端口  ws://localhost:5000
+      ws: true, // ← 允许升级
       changeOrigin: true,
-      secure: false, // 2. 允许自签名或隧道证书
-      // 3. 不写 pathRewrite，这样前端请求 /ws，代理就原样转发 /ws 给后端
+      secure: false,
+      // 关键：把浏览器发来的 upgrade 头原封不动带过去
+      headers: {
+        connection: 'upgrade',
+        upgrade: 'websocket',
+      },
     },
   },
   routes: [
     {
       path: '/',
       redirect: '/syncVideo',
+    },
+    {
+      name: '房间大厅',
+      path: '/RoomPage',
+      component: './RoomPage',
+      icon: 'Home',
     },
     {
       name: '播放列表',
@@ -45,20 +55,20 @@ export default defineConfig({
   ],
   npmClient: 'yarn',
   chainWebpack(memo, args) {
-    memo.plugin('terser-webpack-plugin').use(TerserPlugin, [
-      {
-        terserOptions: {
-          output: {
-            comments: false, //去除注释
-          },
-          warnings: false, //去除黄色警告
-          compress: {
-            drop_console: true,
-            drop_debugger: true,
-            pure_funcs: ['console.log'], //移除console.log 避免console.error
-          },
-        },
-      },
-    ]);
+    // memo.plugin('terser-webpack-plugin').use(TerserPlugin, [
+    //   {
+    //     terserOptions: {
+    //       output: {
+    //         comments: false, //去除注释
+    //       },
+    //       warnings: false, //去除黄色警告
+    //       compress: {
+    //         drop_console: true,
+    //         drop_debugger: true,
+    //         pure_funcs: ['console.log'], //移除console.log 避免console.error
+    //       },
+    //     },
+    //   },
+    // ]);
   },
 });

@@ -66,14 +66,3 @@ declare namespace API {
 
   type definitions_0 = null;
 }
-
-/**播放列表 */
-type playItem = {
-  id: string;
-  masterUrl: string; //房主url
-  guestUrl: string; //房客url
-  size?: string;
-  title?: string;
-  PlayPriority?: number;
-  isPlaying?: boolean; //正在播放
-};

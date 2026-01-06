@@ -1,3 +1,4 @@
+import RoomService from '@/services/Room';
 import { PageContainer } from '@ant-design/pro-components';
 import { Button, Card, Form, Input, message, Switch } from 'antd';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -18,21 +19,24 @@ type WsMessage = {
     | 'queue'
     | 'joined'
     | 'user_leave'
+    | 'error'
     | 'ready_count';
-  room_id?: string;
+  Room_name?: string;
   pwd?: string;
   ts?: number;
   list?: any[];
-  count?: number;
-  total?: number;
+  Count?: number;
+  Total?: number;
   error?: string;
-  video?: any;
+  Video?: playItem;
+  message?: string;
 };
 
 const SyncVideoPage: React.FC = () => {
   // 状态管理
   const [url, setUrl] = useState<string>();
-  const [roomId, setRoomId] = useState<string>('');
+  const [roomName, setRoomName] = useState<string>('');
+  const [roomID, setRoomID] = useState<React.Key | null>(null);
   const [pwd, setPwd] = useState<string>('');
   const [identity, setIdentity] = useState<boolean>(true); // true 房主 false 房客
   const identityRef = useRef(identity);
@@ -56,9 +60,10 @@ const SyncVideoPage: React.FC = () => {
   // 初始化加载本地存储
   useEffect(() => {
     const cachedPwd = localStorage.getItem('roomPwd');
-    const cachedRoomId = localStorage.getItem('roomId');
+    const cachedRoomName = localStorage.getItem('roomName');
+
     if (cachedPwd) setPwd(cachedPwd);
-    if (cachedRoomId) setRoomId(cachedRoomId);
+    if (cachedRoomName) setRoomName(cachedRoomName);
   }, []);
 
   // 监听播放器的原生事件
@@ -84,7 +89,11 @@ const SyncVideoPage: React.FC = () => {
       if (isBuffering.current) return;
 
       wsRef.current?.send(
-        JSON.stringify({ cmd: 'pause', ts: videoEl.currentTime }),
+        JSON.stringify({
+          cmd: 'pause',
+          ts: videoEl.currentTime,
+          Room_name: roomName,
+        }),
       );
     };
 
@@ -106,7 +115,11 @@ const SyncVideoPage: React.FC = () => {
       isBuffering.current = false; // （seeked时）缓冲已经完成
 
       wsRef.current?.send(
-        JSON.stringify({ cmd: 'seek', ts: videoEl.currentTime }),
+        JSON.stringify({
+          cmd: 'seek',
+          ts: videoEl.currentTime,
+          Room_name: roomName,
+        }),
       );
     };
 
@@ -127,7 +140,11 @@ const SyncVideoPage: React.FC = () => {
       bufferTimeOut.current = setTimeout(() => {
         // 发送暂停指令
         wsRef.current?.send(
-          JSON.stringify({ cmd: 'pause', ts: videoEl.currentTime }),
+          JSON.stringify({
+            cmd: 'pause',
+            ts: videoEl.currentTime,
+            Room_name: roomName,
+          }),
         );
       }, 1000);
     };
@@ -151,7 +168,11 @@ const SyncVideoPage: React.FC = () => {
       }
       //广播播放
       wsRef.current?.send(
-        JSON.stringify({ cmd: 'play', ts: videoEl.currentTime }),
+        JSON.stringify({
+          cmd: 'play',
+          ts: videoEl.currentTime,
+          Room_name: roomName,
+        }),
       );
     };
 
@@ -170,20 +191,22 @@ const SyncVideoPage: React.FC = () => {
     };
   }, [isConnected, url]); // 当连接状态或视频源改变时重新绑定
 
-  // 【新增】发送切换视频指令
+  // 发送切换视频指令
   const handleSwitchVideo = useCallback(
-    (videoItem: any) => {
+    (videoItem: playItem) => {
       if (wsRef.current && isConnected) {
         wsRef.current.send(
           JSON.stringify({
             cmd: 'change_video',
             video: videoItem,
+            Room_name: roomName,
           }),
         );
+
         message.loading('正在同步切换视频...', 1);
       } else {
         // 如果没连接，就只能本地切一下（降级处理）
-        const targetUrl = identity ? videoItem.masterUrl : videoItem.guestUrl;
+        const targetUrl = identity ? videoItem.MasterUrl : videoItem.GuestUrl;
         setUrl(targetUrl);
       }
     },
@@ -192,7 +215,7 @@ const SyncVideoPage: React.FC = () => {
 
   // 核心：WebSocket 连接与消息处理
   const connectWs = useCallback(() => {
-    if (!roomId) {
+    if (!roomName) {
       message.error('请输入房间号');
       return;
     }
@@ -202,155 +225,155 @@ const SyncVideoPage: React.FC = () => {
       wsRef.current.close();
     }
 
-    // const wsUrl = `ws://${window.location.hostname}:55061/ws`; // 建议根据环境配置
-    // 这里的 /ws/ 可能被 umi 代理，如果直连后端端口需写全
-    // const ws = new WebSocket('/ws/');
-    const ws = new WebSocket('/ws');
+    RoomService.joinRoom(roomName, pwd)
+      .then((res) => {
+        if (res.data.code !== 200) {
+          message.error(res.data.message);
+          return;
+        }
+        setRoomID(res.data.data?.Room_id || null);
+        const ws = new WebSocket('/ws');
 
-    ws.onopen = () => {
-      console.log('WebSocket 连接已打开');
-      setIsConnected(true);
-      // 连接成功后立即发送加入房间指令
-      ws.send(JSON.stringify({ cmd: 'join', room_id: roomId, pwd: pwd }));
+        ws.onopen = () => {
+          console.log('WebSocket 连接已打开');
+          setIsConnected(true);
+          // 连接成功后立即发送加入房间指令
+          ws.send(
+            JSON.stringify({ cmd: 'join', Room_name: roomName, pwd: pwd }),
+          );
 
-      // 缓存到本地
-      localStorage.setItem('roomPwd', pwd);
-      localStorage.setItem('roomId', roomId);
-    };
+          // 缓存到本地
+          localStorage.setItem('roomPwd', pwd);
+          localStorage.setItem('roomName', roomName);
+        };
 
-    ws.onclose = () => {
-      console.log('连接已关闭');
-      setIsConnected(false);
-      setIsReady(false);
-      wsRef.current = null;
-    };
+        ws.onclose = () => {
+          console.log('连接已关闭');
+          setIsConnected(false);
+          setIsReady(false);
+          wsRef.current = null;
+        };
 
-    ws.onerror = (error) => {
-      console.error('WebSocket 发生错误:', error);
-      message.error('连接服务器失败');
-    };
+        ws.onerror = (error) => {
+          console.error('WebSocket 发生错误:', error);
+          message.error('连接服务器失败');
+        };
 
-    ws.onmessage = async (ev) => {
-      const msg: WsMessage = JSON.parse(ev.data);
-      console.log('收到消息:', msg);
+        ws.onmessage = async (ev) => {
+          const msg: WsMessage = JSON.parse(ev.data);
 
-      // 获取 video 元素 (video-react 的封装)
-      // video-react 的 ref.current.video 是实际的 HTMLVideoElement
-      const videoEl = playerRef.current?.video?.video as HTMLVideoElement;
+          // 获取 video 元素 (video-react 的封装)
+          // video-react 的 ref.current.video 是实际的 HTMLVideoElement
+          const videoEl = playerRef.current?.video?.video as HTMLVideoElement;
 
-      if (msg.error) {
-        message.error(msg.error);
+          if (msg.error) {
+            message.error(msg.error);
+            return;
+          }
+
+          switch (msg.cmd) {
+            case 'joined':
+              message.success(`成功加入房间: ${msg.Room_name}`);
+              break;
+            case 'play':
+              if (videoEl && msg.ts !== undefined) {
+                isRemoteUpdate.current = true; //加锁
+
+                // 时间误差修正
+                if (
+                  msg.ts !== undefined &&
+                  Math.abs(videoEl.currentTime - msg.ts) > 0.3
+                ) {
+                  videoEl.currentTime = msg.ts;
+                }
+
+                await videoEl
+                  .play()
+                  .then(() => {
+                    isRemoteUpdate.current = false;
+                  })
+                  .catch(() => {
+                    isRemoteUpdate.current = false;
+                  });
+              }
+              break;
+            case 'pause':
+              if (videoEl) {
+                if (isBuffering.current) return;
+
+                isRemoteUpdate.current = true;
+
+                videoEl.pause();
+
+                // if (msg.ts !== undefined) videoEl.currentTime = msg.ts;
+                if (msg.ts !== undefined) videoEl.currentTime = msg.ts;
+              }
+              // 如果是因为有人取消准备导致的暂停，给个提示
+              if (!isAllReady) {
+                message.info(`播放已暂停，可能有成员在缓冲视频哦！`);
+              }
+              break;
+            case 'seek':
+              if (videoEl && msg.ts !== undefined) {
+                // 【关键修改 4】加锁！告诉 handleSeeked 这是服务器让改的
+                isRemoteUpdate.current = true;
+                videoEl.currentTime = msg.ts;
+                // 锁会在 handleSeeked 事件触发时被消费并重置
+              }
+              break;
+            case 'queue':
+              // 触发 UrlList 刷新
+              setRefreshQueueTrigger((prev) => prev + 1);
+              break;
+            case 'ready_count':
+              // 如果 msg.count === 0，说明服务器重置了，可以用来校验本地状态
+              if (msg.Count === msg.Total && msg.Total && msg.Total > 0) {
+                message.success('全员就绪，准备播放！');
+                setIsAllReady(true);
+              } else {
+                setIsAllReady(false);
+                message.info(`当前准备人数: ${msg.Count}/${msg.Total}`);
+              }
+              break;
+            case 'user_leave':
+              message.info('有用户离开了房间');
+              break;
+            // 处理切换视频指令
+            case 'change_video':
+              if (msg.Video) {
+                const targetUrl = identityRef.current
+                  ? msg.Video.MasterUrl
+                  : msg.Video.GuestUrl;
+
+                // 1. 切换 URL
+                setUrl(targetUrl);
+
+                // 2. 所有人强制取消“准备”状态，防止有人误操作直接播放
+                setIsReady(false);
+
+                // 3. 提示
+                message.info(`当前视频已切换为: ${msg.Video.Title}`);
+
+                // 4. 重置播放器时间 (可选，因为换源后通常也是从0开始)
+                if (videoEl) videoEl.currentTime = 0;
+
+                (playerRef.current as PlayerReference).load();
+              }
+              setIsAllReady(false); // 切视频必定导致未准备
+              break;
+            case 'error':
+              message.error(msg.message || '收到未知错误');
+              break;
+          }
+        };
+
+        wsRef.current = ws;
+      })
+      .catch(() => {
+        message.error('加入房间失败，请检查网络或稍后重试');
         return;
-      }
-
-      switch (msg.cmd) {
-        case 'joined':
-          message.success(`成功加入房间: ${msg.room_id}`);
-          break;
-        case 'play':
-          if (videoEl && msg.ts !== undefined) {
-            isRemoteUpdate.current = true; //加锁
-            // // 允许 0.3 秒的误差，避免频繁 seek 导致卡顿
-            // if (Math.abs(videoEl.currentTime - msg.ts) > 0.5) {
-            //     videoEl.currentTime = msg.ts;
-            // }
-            // 时间误差修正
-            console.log('时间误差：', videoEl.currentTime - msg.ts);
-            if (
-              msg.ts !== undefined &&
-              Math.abs(videoEl.currentTime - msg.ts) > 0.3
-            ) {
-              videoEl.currentTime = msg.ts;
-            }
-
-            await videoEl
-              .play()
-              .then(() => {
-                isRemoteUpdate.current = false;
-              })
-              .catch((e) => {
-                isRemoteUpdate.current = false;
-                console.log('自动播放被拦截:', e);
-              });
-          }
-          break;
-        case 'pause':
-          if (videoEl) {
-            console.log(`是否暂停:${isBuffering.current}`);
-            if (isBuffering.current) return;
-
-            isRemoteUpdate.current = true;
-
-            videoEl.pause();
-
-            // if (msg.ts !== undefined) videoEl.currentTime = msg.ts;
-            if (msg.ts !== undefined) videoEl.currentTime = msg.ts;
-            // 暂停的事件触发很快，可以不需要太长的延时，但为了保险依然可以在事件回调里解
-          }
-          // 如果是因为有人取消准备导致的暂停，给个提示
-          if (!isAllReady) {
-            // 这里逻辑稍微有点绕，因为pause可能是手动点的，也可能是服务器强制的
-            // 可以简单提示一下
-            message.info(`播放已暂停，请确认不是“未准备”导致的`);
-          }
-          break;
-        case 'seek':
-          if (videoEl && msg.ts !== undefined) {
-            console.log('收到远程 Seek 指令:', msg.ts);
-            // 【关键修改 4】加锁！告诉 handleSeeked 这是服务器让改的
-            isRemoteUpdate.current = true;
-            videoEl.currentTime = msg.ts;
-            // 锁会在 handleSeeked 事件触发时被消费并重置
-          }
-          break;
-        case 'queue':
-          // 【新增】收到后端最新的队列（包含最新的 isPlaying 状态）
-          // 触发 UrlList 刷新
-          setRefreshQueueTrigger((prev) => prev + 1);
-          break;
-        case 'ready_count':
-          // 如果 msg.count === 0，说明服务器重置了，可以用来校验本地状态
-          if (msg.count === msg.total && msg.total && msg.total > 0) {
-            message.success('全员就绪，准备播放！');
-            setIsAllReady(true);
-          } else {
-            setIsAllReady(false);
-            message.info(`当前准备人数: ${msg.count}/${msg.total}`);
-          }
-          break;
-        case 'user_leave':
-          message.info('有用户离开了房间');
-          break;
-        // 处理切换视频指令
-        case 'change_video':
-          if (msg.video) {
-            // const targetUrl = identity ? msg.video.masterUrl : msg.video.guestUrl;
-            const targetUrl = identityRef.current
-              ? msg.video.masterUrl
-              : msg.video.guestUrl;
-            console.log('收到切片指令:', msg.video.title, targetUrl);
-
-            // 1. 切换 URL
-            setUrl(targetUrl);
-
-            // 2. 所有人强制取消“准备”状态，防止有人误操作直接播放
-            setIsReady(false);
-
-            // 3. 提示
-            message.info(`当前视频已切换为: ${msg.video.title}`);
-
-            // 4. 重置播放器时间 (可选，因为换源后通常也是从0开始)
-            if (videoEl) videoEl.currentTime = 0;
-
-            (playerRef.current as PlayerReference).load();
-          }
-          setIsAllReady(false); // 切视频必定导致未准备
-          break;
-      }
-    };
-
-    wsRef.current = ws;
-  }, [roomId, pwd, message, identity]);
+      });
+  }, [roomName, pwd, message, identity]);
 
   // 组件卸载时断开连接
   useEffect(() => {
@@ -365,15 +388,21 @@ const SyncVideoPage: React.FC = () => {
   const toggleReady = useCallback(
     (checked: boolean) => {
       if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+        console.log('发送前');
         wsRef.current.send(
-          JSON.stringify({ cmd: checked ? 'ready' : 'unready' }),
+          JSON.stringify({
+            cmd: checked ? 'ready' : 'unready',
+            Room_name: roomName,
+          }),
         );
+        console.log('发送后');
+
         setIsReady(checked);
       } else {
         message.warning('请先加入房间');
       }
     },
-    [message],
+    [message, roomName],
   );
 
   // 播放控制 - 发送端
@@ -384,6 +413,7 @@ const SyncVideoPage: React.FC = () => {
         JSON.stringify({
           cmd: type,
           ts: videoEl.currentTime,
+          Room_name: roomName,
         }),
       );
     }
@@ -402,8 +432,8 @@ const SyncVideoPage: React.FC = () => {
           <Form layout="vertical">
             <Form.Item label="房间号">
               <Input
-                value={roomId}
-                onChange={(e) => setRoomId(e.target.value)}
+                value={roomName}
+                onChange={(e) => setRoomName(e.target.value)}
                 disabled={isConnected}
               />
             </Form.Item>
@@ -439,13 +469,11 @@ const SyncVideoPage: React.FC = () => {
           </Form>
 
           <div style={{ maxHeight: '400px', overflow: 'auto' }}>
-            {isConnected && roomId ? (
+            {isConnected && roomID ? (
               <UrlList
-                roomId={roomId}
+                roomID={roomID}
                 refreshTrigger={refreshQueueTrigger}
-                onPlayer={(video) => {
-                  handleSwitchVideo(video);
-                }}
+                onPlayer={handleSwitchVideo}
               />
             ) : (
               <div

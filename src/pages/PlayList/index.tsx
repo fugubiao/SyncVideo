@@ -1,28 +1,41 @@
+import RoomService from '@/services/Room';
 import { PageContainer } from '@ant-design/pro-components';
-import { Button, Input, InputRef, Modal } from 'antd';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { Button, Input, InputRef, message, Modal } from 'antd';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import UrlList from './urlList';
-
 const PlayListPage: React.FC = () => {
-  const [roomId, setRoomId] = useState<string>();
+  const [roomId, setRoomId] = useState<React.Key>();
+  const [roomName, setRoomName] = useState<string>();
   const [open, setopen] = useState(true);
   const inputRef = useRef<InputRef>(null);
   const inputPassRef = useRef<InputRef>(null);
   const onOk = useCallback(() => {
-    const roomId = inputRef.current?.input?.value;
+    const inputRoomName = inputRef.current?.input?.value;
     const roomPwd = inputPassRef.current?.input?.value;
     if (roomPwd) localStorage.setItem('roomPwd', roomPwd);
-    if (roomId) {
-      setRoomId(roomId);
-      localStorage.setItem('roomId', roomId);
+    if (inputRoomName) {
+      setRoomName(inputRoomName);
+      localStorage.setItem('roomName', inputRoomName);
+      RoomService.joinRoom(inputRoomName, roomPwd).then((res) => {
+        if (res.data.code === 200) {
+          message.success('加入房间成功');
+          let room_id = res.data.data.Room_id;
+          setRoomId(room_id);
+          localStorage.setItem('roomId', room_id.toString());
+          setopen(false);
+        } else {
+          message.error(`加入房间失败:${res.data.message}`);
+        }
+      });
     }
-    setopen(false);
   }, []);
   const onCancel = useCallback(() => {
     setopen(false);
   }, []);
   useEffect(() => {
     const savedRoomId = localStorage.getItem('roomId');
+    const savaeRoomName = localStorage.getItem('roomName');
+    if (savaeRoomName) setRoomName(savaeRoomName);
     if (savedRoomId) {
       setRoomId(savedRoomId);
       setopen(false);
@@ -53,7 +66,7 @@ const PlayListPage: React.FC = () => {
         </div>
       </Modal>
 
-      {roomId && (
+      {roomId?.toString() && (
         <div>
           <div
             style={{
@@ -64,11 +77,11 @@ const PlayListPage: React.FC = () => {
             }}
           >
             <div style={{ display: 'flex', alignItems: 'center' }}>
-              房间ID:{roomId}
+              房间ID:{roomName}
             </div>
             <Button onClick={() => setopen(true)}>修改</Button>
           </div>
-          <UrlList roomId={roomId} />
+          <UrlList roomID={roomId} />
         </div>
       )}
     </PageContainer>
