@@ -113,10 +113,7 @@ const UrlList: React.FC<{
               setOpen(true);
               setIsUpdate(true);
               // 强制回填表单数据
-              // setTimeout(() => formRef.current?.setFieldsValue(record), 0);
-              formRef.current?.setFieldsValue(record);
-              console.log('强制回填表单数据', record);
-              actionRef.current?.reload();
+              setTimeout(() => formRef.current?.setFieldsValue(record), 0);
             }}
           >
             修改
@@ -149,11 +146,11 @@ const UrlList: React.FC<{
           ];
         }}
         request={async (params) => {
-          const { current, pageSize, title } = params;
+          const { current, pageSize, Title } = params;
           const getParam: QueryPlayListType = {
             pageIndex: current,
             pageSize,
-            title,
+            title: Title,
           };
 
           const res = await PlayServicer.get(getParam);
@@ -196,7 +193,7 @@ const UrlList: React.FC<{
             ...value,
             ...(isUpdate ? {} : { PlayPriority: currenMaxPriority + 1 }),
             IsPlayying: false,
-            room_id: roomID,
+            Room_id: roomID,
           };
 
           const res = isUpdate
@@ -207,7 +204,9 @@ const UrlList: React.FC<{
 
             // 关闭弹窗并刷新列表
             setOpen(false);
-            actionRef.current?.reload();
+            setTimeout(() => {
+              actionRef.current?.reload();
+            }, 0);
             return true;
           }
           message.error(res.data.message);
@@ -235,10 +234,10 @@ const UrlList: React.FC<{
           transform={(value) => Number(value)}
         />
 
-        <ProFormText name="id" hidden />
+        <ProFormText name="Id" hidden />
         <ProFormText name="VersionTimestamp" hidden />
         <ProFormText name="PlayPriority" hidden />
-        <ProFormText name="room_id" hidden />
+        <ProFormText name="Room_id" hidden />
       </ModalForm>
     </>
   );

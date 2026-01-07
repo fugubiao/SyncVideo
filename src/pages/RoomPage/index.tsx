@@ -69,8 +69,11 @@ const RoomPage: React.FC = () => {
             title="确定要删除吗？"
             onConfirm={() => {
               console.log('record,', record);
-              RoomService.delete(record.Room_id).then(() => {
-                actionRef.current?.reload();
+              RoomService.delete(record.Room_id).then((res) => {
+                if (res.data.code === 200) {
+                  message.success('删除成功');
+                  actionRef.current?.reload();
+                }
               });
             }}
             okText="是"
@@ -160,13 +163,12 @@ const RoomPage: React.FC = () => {
             message.success(res.data.message ?? '操作成功');
             actionRef.current?.reload();
             formRef.current?.resetFields();
-            return true; // 返回 true 会自动关闭弹窗
+            return true;
           }
           message.error(res.data.message ?? '操作失败');
-          return false; // 返回 false 弹窗保持打开
+          return false;
         }}
       >
-        {/* 之前的隐藏字段 */}
         <ProFormText name="Room_id" hidden />
         <ProFormText name="VersionTimestamp" hidden />
 

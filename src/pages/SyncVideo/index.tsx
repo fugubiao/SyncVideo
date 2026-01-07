@@ -28,6 +28,7 @@ type WsMessage = {
   Count?: number;
   Total?: number;
   error?: string;
+  is_buffering?: boolean; // 标记该暂停是否由缓冲引发
   Video?: playItem;
   message?: string;
 };
@@ -70,7 +71,6 @@ const SyncVideoPage: React.FC = () => {
   useEffect(() => {
     // video-react 的底层 HTMLVideoElement 对象
     const videoEl = playerRef.current?.video?.video as HTMLVideoElement;
-    //正常应该以
 
     if (!videoEl || !isConnected) return;
 
@@ -132,8 +132,6 @@ const SyncVideoPage: React.FC = () => {
      */
     const handleWaiting = () => {
       if (isRemoteUpdate.current) return;
-
-      // 标记为缓冲状态
       isBuffering.current = true;
 
       //缓冲如果在一秒内完毕则不发送广播
@@ -141,12 +139,12 @@ const SyncVideoPage: React.FC = () => {
         // 发送暂停指令
         wsRef.current?.send(
           JSON.stringify({
-            cmd: 'pause',
+            cmd: 'buffer_start',
             ts: videoEl.currentTime,
             Room_name: roomName,
           }),
         );
-      }, 1000);
+      }, 500);
     };
 
     /**
@@ -160,13 +158,32 @@ const SyncVideoPage: React.FC = () => {
       //如果是从缓冲恢复播放，清除缓冲的广播定时器
       if (bufferTimeOut.current) clearTimeout(bufferTimeOut.current);
       //拦截远程指令触发的 playing 事件
+      console.log(
+        '播放监视器触发，远程指令：',
+        isRemoteUpdate.current,
+        '缓冲状态：',
+        isBuffering.current,
+      );
       if (isRemoteUpdate.current) return;
 
-      // 缓冲结束
+      // 缓冲结束(即是缓冲完成触发的播放分支)
       if (isBuffering.current) {
-        isBuffering.current = false; // 【清除标记】
+        isBuffering.current = false;
+
+        wsRef.current?.send(
+          JSON.stringify({
+            cmd: 'buffer_done',
+            ts: videoEl.currentTime,
+            Room_name: roomName,
+          }),
+        );
+        console.log('我不卡了，发送缓冲完成指令');
+        // 暂时本地保持暂停，等后端统一发 play 指令
+        // videoEl.pause();
+        return;
       }
-      //广播播放
+
+      //点击触发的播放分支
       wsRef.current?.send(
         JSON.stringify({
           cmd: 'play',
@@ -278,6 +295,7 @@ const SyncVideoPage: React.FC = () => {
               message.success(`成功加入房间: ${msg.Room_name}`);
               break;
             case 'play':
+              console.log('play:不卡了，服务器发送了play');
               if (videoEl && msg.ts !== undefined) {
                 isRemoteUpdate.current = true; //加锁
 
@@ -293,9 +311,11 @@ const SyncVideoPage: React.FC = () => {
                   .play()
                   .then(() => {
                     isRemoteUpdate.current = false;
+                    console.log('play:播放成功');
                   })
                   .catch(() => {
                     isRemoteUpdate.current = false;
+                    console.log('play:失败');
                   });
               }
               break;
@@ -307,13 +327,22 @@ const SyncVideoPage: React.FC = () => {
 
                 videoEl.pause();
 
-                // if (msg.ts !== undefined) videoEl.currentTime = msg.ts;
-                if (msg.ts !== undefined) videoEl.currentTime = msg.ts;
+                if (msg.ts !== undefined && msg.ts !== null)
+                  videoEl.currentTime = msg.ts;
               }
-              // 如果是因为有人取消准备导致的暂停，给个提示
+
+              if (msg.is_buffering && !isBuffering.current) {
+                console.log('我不卡，但我配合大家暂停，并向后端发送就绪报告');
+                wsRef.current?.send(
+                  JSON.stringify({ cmd: 'buffer_done', Room_name: roomName }),
+                );
+              }
+
+              // 取消准备，切换视频
               if (!isAllReady) {
-                message.info(`播放已暂停，可能有成员在缓冲视频哦！`);
+                message.info(`取消准备 或者 切换视频，已暂停播放`);
               }
+
               break;
             case 'seek':
               if (videoEl && msg.ts !== undefined) {
