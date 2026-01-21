@@ -1,9 +1,9 @@
 interface Rooms {
-  Room_id: React.Key;
+  Room_id: string;
   room_name: string;
   Password?: string;
   CreatedAt?: string;
-  Online?: boolean;
+  OnLine?: boolean;
   MaxNumber?: number;
   VersionTimestamp?: React.Key;
 }

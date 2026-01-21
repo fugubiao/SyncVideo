@@ -51,24 +51,31 @@ export default defineConfig({
       path: '/syncVideo',
       component: './SyncVideo',
       icon: 'Camera',
+      hideInMenu: true,
+    },
+    {
+      name: '一起看剧（safari)',
+      path: '/syncVideoSafari',
+      component: './SyncVideoSafari',
+      icon: 'Camera',
     },
   ],
   npmClient: 'yarn',
-  chainWebpack(memo, args) {
-    // memo.plugin('terser-webpack-plugin').use(TerserPlugin, [
-    //   {
-    //     terserOptions: {
-    //       output: {
-    //         comments: false, //去除注释
-    //       },
-    //       warnings: false, //去除黄色警告
-    //       compress: {
-    //         drop_console: true,
-    //         drop_debugger: true,
-    //         pure_funcs: ['console.log'], //移除console.log 避免console.error
-    //       },
-    //     },
-    //   },
-    // ]);
-  },
+  // chainWebpack(memo, args) {
+  //   memo.plugin('terser-webpack-plugin').use(TerserPlugin, [
+  //     {
+  //       terserOptions: {
+  //         output: {
+  //           comments: false, //去除注释
+  //         },
+  //         warnings: false, //去除黄色警告
+  //         compress: {
+  //           drop_console: true,
+  //           drop_debugger: true,
+  //           pure_funcs: ['console.log'], //移除console.log 避免console.error
+  //         },
+  //       },
+  //     },
+  //   ]);
+  // },
 });

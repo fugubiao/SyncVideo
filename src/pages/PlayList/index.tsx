@@ -35,6 +35,7 @@ const PlayListPage: React.FC = () => {
   useEffect(() => {
     const savedRoomId = localStorage.getItem('roomId');
     const savaeRoomName = localStorage.getItem('roomName');
+
     if (savaeRoomName) setRoomName(savaeRoomName);
     if (savedRoomId) {
       setRoomId(savedRoomId);

@@ -33,11 +33,12 @@ type playItem = {
   /**
    * 房间id
    */
-  room_id: React.Key;
+  Room_id: React.Key;
 };
 
 type QueryPlayListType = {
   title?: string;
   pageIndex?: number;
   pageSize?: number;
+  RoomId: React.Key;
 };

@@ -2,7 +2,6 @@ import RoomService from '@/services/Room';
 import { PageContainer } from '@ant-design/pro-components';
 import { Button, Card, Form, Input, message, Switch } from 'antd';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Player, PlayerReference } from 'video-react'; // 注意类型引用
 import 'video-react/dist/video-react.css';
 import UrlList from '../PlayList/urlList';
 
@@ -50,7 +49,7 @@ const SyncVideoPage: React.FC = () => {
   // 用于通知子组件表格刷新
   const [refreshQueueTrigger, setRefreshQueueTrigger] = useState(0);
 
-  const playerRef = useRef<any>(null);
+  const playerRef = useRef<HTMLVideoElement>(null);
   const wsRef = useRef<WebSocket | null>(null);
 
   // 同步锁：当前是否正在处理服务器传来的同步指令（此时不要触发发送）
@@ -70,7 +69,7 @@ const SyncVideoPage: React.FC = () => {
   // 监听播放器的原生事件
   useEffect(() => {
     // video-react 的底层 HTMLVideoElement 对象
-    const videoEl = playerRef.current?.video?.video as HTMLVideoElement;
+    const videoEl = playerRef.current;
 
     if (!videoEl || !isConnected) return;
 
@@ -252,7 +251,6 @@ const SyncVideoPage: React.FC = () => {
           setRoomID(res.data.data?.Room_id);
           localStorage.setItem('roomId', res.data.data?.Room_id);
         }
-
         const ws = new WebSocket('/ws');
 
         ws.onopen = () => {
@@ -287,7 +285,7 @@ const SyncVideoPage: React.FC = () => {
 
           // 获取 video 元素 (video-react 的封装)
           // video-react 的 ref.current.video 是实际的 HTMLVideoElement
-          const videoEl = playerRef.current?.video?.video as HTMLVideoElement;
+          const videoEl = playerRef.current;
 
           if (msg.error) {
             message.error(msg.error);
@@ -391,8 +389,7 @@ const SyncVideoPage: React.FC = () => {
 
                 // 4. 重置播放器时间 (可选，因为换源后通常也是从0开始)
                 if (videoEl) videoEl.currentTime = 0;
-
-                (playerRef.current as PlayerReference).load();
+                videoEl?.load();
               }
               setIsAllReady(false); // 切视频必定导致未准备
               break;
@@ -412,7 +409,7 @@ const SyncVideoPage: React.FC = () => {
     return () => {
       if (playerRef.current) {
         playerRef.current.pause();
-        playerRef.current = null;
+        playerRef.current.load();
       }
     };
   }, [roomName, pwd, message, identity, playerRef, url]);
@@ -449,7 +446,7 @@ const SyncVideoPage: React.FC = () => {
 
   // 播放控制 - 发送端
   const handleSendControl = useCallback((type: 'play' | 'pause') => {
-    const videoEl = playerRef.current?.video?.video as HTMLVideoElement;
+    const videoEl = playerRef.current;
     if (videoEl && wsRef.current) {
       wsRef.current.send(
         JSON.stringify({
@@ -576,9 +573,17 @@ const SyncVideoPage: React.FC = () => {
             </div>
           )}
 
-          <Player ref={playerRef} key="Player" playsInline>
-            <source src={url} />
-          </Player>
+          <div className="video-container">
+            <video
+              ref={playerRef}
+              src={url}
+              controls // 开启原生控制条
+              playsInline // 必须
+              // webkit-playsinline="true" // 针对旧版 iOS 的兼容
+              preload="auto"
+              style={{ width: '100%', height: 'auto' }}
+            />
+          </div>
         </div>
 
         <div
