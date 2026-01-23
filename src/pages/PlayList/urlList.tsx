@@ -113,7 +113,10 @@ const UrlList: React.FC<{
               setOpen(true);
               setIsUpdate(true);
               // 强制回填表单数据
-              setTimeout(() => formRef.current?.setFieldsValue(record), 0);
+              // setTimeout(() => formRef.current?.setFieldsValue(record), 0);
+              formRef.current?.setFieldsValue(record);
+              console.log('强制回填表单数据', record);
+              actionRef.current?.reload();
             }}
           >
             修改
