@@ -1,10 +1,10 @@
 import RoomService from '@/services/Room';
 import { PageContainer } from '@ant-design/pro-components';
 import { Button, Card, Form, Input, message, Switch } from 'antd';
+import HLS from 'hls.js';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import 'video-react/dist/video-react.css';
 import UrlList from '../PlayList/urlList';
-
 // 定义消息类型，方便维护
 type WsMessage = {
   cmd:
@@ -48,12 +48,11 @@ const SyncVideoPage: React.FC = () => {
   const [isAllReady, setIsAllReady] = useState(false); // 是否全员准备就绪
   // 用于通知子组件表格刷新
   const [refreshQueueTrigger, setRefreshQueueTrigger] = useState(0);
-
+  const hlsRef = useRef<HLS | null>(null);
   const playerRef = useRef<HTMLVideoElement>(null);
   const wsRef = useRef<WebSocket | null>(null);
 
-  // 同步锁：当前是否正在处理服务器传来的同步指令（此时不要触发发送）
-  const isRemoteUpdate = useRef(false); //同步锁
+  const isRemoteUpdate = useRef(false); //同步锁：是否正在处理服务器传来的同步指令
   //缓冲状态锁：视频是否是因为缓冲而暂停
   const isBuffering = useRef(false);
   const bufferTimeOut = useRef<NodeJS.Timeout>();
@@ -65,6 +64,60 @@ const SyncVideoPage: React.FC = () => {
     if (cachedPwd) setPwd(cachedPwd);
     if (cachedRoomName) setRoomName(cachedRoomName);
   }, []);
+
+  useEffect(() => {
+    const video = playerRef.current;
+    if (!video || !url) return;
+
+    // 每次切换 URL 前，先销毁旧的 hls 实例
+    if (hlsRef.current) {
+      hlsRef.current.destroy();
+      hlsRef.current = null;
+    }
+
+    const isM3U8 = url.toLowerCase().includes('.m3u8');
+
+    if (isM3U8) {
+      // 场景 A: 浏览器原生支持 HLS (如 Safari, 或者开启了 HLS 支持的手机浏览器)
+      if (video.canPlayType('application/vnd.apple.mpegurl')) {
+        video.src = url;
+        console.log('Native HLS support detected (Safari/iOS)');
+      }
+      // 场景 B: 浏览器不支持原生 HLS，但支持 MediaSource Extensions (hls.js)
+      else if (HLS.isSupported()) {
+        const hls = new HLS({
+          // 这里可以添加 hls.js 的配置，比如调试信息
+          enableWorker: true,
+        });
+        hls.loadSource(url);
+        hls.attachMedia(video);
+        hlsRef.current = hls;
+
+        hls.on(HLS.Events.MANIFEST_PARSED, () => {
+          console.log('hls.js: manifest parsed, ready to play');
+        });
+
+        hls.on(HLS.Events.ERROR, (event, data) => {
+          if (data.fatal) {
+            console.error('HLS fatal error:', data.type);
+          }
+        });
+      } else {
+        message.error('您的浏览器不支持播放 HLS 视频');
+      }
+    } else {
+      // 场景 C: 普通 MP4 视频
+      video.src = url;
+    }
+
+    // 清理函数
+    return () => {
+      if (hlsRef.current) {
+        hlsRef.current.destroy();
+        hlsRef.current = null;
+      }
+    };
+  }, [url]);
 
   // 监听播放器的原生事件
   useEffect(() => {
@@ -227,9 +280,8 @@ const SyncVideoPage: React.FC = () => {
       }
     },
     [isConnected, identity],
-  ); // 依赖 identity
+  );
 
-  // 核心：WebSocket 连接与消息处理
   const connectWs = useCallback(() => {
     if (!roomName) {
       message.error('请输入房间号');
@@ -256,12 +308,9 @@ const SyncVideoPage: React.FC = () => {
         ws.onopen = () => {
           console.log('WebSocket 连接已打开');
           setIsConnected(true);
-          // 连接成功后立即发送加入房间指令
           ws.send(
             JSON.stringify({ cmd: 'join', Room_name: roomName, pwd: pwd }),
           );
-
-          // 缓存到本地
           localStorage.setItem('roomPwd', pwd);
           localStorage.setItem('roomName', roomName);
         };
@@ -282,9 +331,6 @@ const SyncVideoPage: React.FC = () => {
 
         ws.onmessage = async (ev) => {
           const msg: WsMessage = JSON.parse(ev.data);
-
-          // 获取 video 元素 (video-react 的封装)
-          // video-react 的 ref.current.video 是实际的 HTMLVideoElement
           const videoEl = playerRef.current;
 
           if (msg.error) {
@@ -297,7 +343,6 @@ const SyncVideoPage: React.FC = () => {
               message.success(`成功加入房间: ${msg.Room_name}`);
               break;
             case 'play':
-              console.log('play:不卡了，服务器发送了play');
               if (videoEl && msg.ts !== undefined) {
                 isRemoteUpdate.current = true; //加锁
 
@@ -343,7 +388,7 @@ const SyncVideoPage: React.FC = () => {
               // 取消准备，切换视频
               if (!isAllReady) {
                 message.info(`取消准备 或者 切换视频，已暂停播放`);
-              }
+              } else message.info(`视频已暂停！`);
 
               break;
             case 'seek':
@@ -566,8 +611,6 @@ const SyncVideoPage: React.FC = () => {
                   unCheckedChildren="点击准备"
                   checked={isReady}
                   onChange={toggleReady}
-                  // 遮罩层内部允许点击这个开关（通过pointer-events处理或者层级处理）
-                  // 但简单的做法是把开关放到遮罩外面，或者把遮罩只盖在 video 上
                 />
               </div>
             </div>
@@ -576,7 +619,7 @@ const SyncVideoPage: React.FC = () => {
           <div className="video-container">
             <video
               ref={playerRef}
-              src={url}
+              // src={url}
               controls // 开启原生控制条
               playsInline // 必须
               // webkit-playsinline="true" // 针对旧版 iOS 的兼容
