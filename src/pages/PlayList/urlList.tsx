@@ -1,5 +1,5 @@
 import PlayServicer from '@/services/PlayList';
-import { PlusOutlined } from '@ant-design/icons';
+import { DeleteFilled, PlusOutlined } from '@ant-design/icons';
 import {
   ActionType,
   ModalForm,
@@ -8,7 +8,7 @@ import {
   ProFormText,
   ProTable,
 } from '@ant-design/pro-components';
-import { Button, message, Popconfirm, Tag } from 'antd';
+import { Button, message, Popconfirm, Table, Tag } from 'antd';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 
 const UrlList: React.FC<{
@@ -21,7 +21,21 @@ const UrlList: React.FC<{
   const actionRef = useRef<ActionType>();
   const [currenMaxPriority, setPriority] = useState(0);
   const [isUpdate, setIsUpdate] = useState<boolean>(false);
-
+  const [rowSelectionKeys, setRowSelectionKeys] = useState<React.Key[]>([]);
+  const batchDelete = useCallback(() => {
+    if (rowSelectionKeys.length === 0) {
+      message.warning('请先选择要删除的视频');
+      return;
+    }
+    PlayServicer.batchDelete(rowSelectionKeys, roomID).then((res) => {
+      if (res.data.code === 200) {
+        setRowSelectionKeys([]);
+        actionRef.current?.reload();
+      } else {
+        message.error(res.data.message);
+      }
+    });
+  }, [rowSelectionKeys]);
   // 【新增】监听 refreshTrigger 变化，自动刷新表格
   useEffect(() => {
     if (refreshTrigger && refreshTrigger > 0) {
@@ -136,6 +150,21 @@ const UrlList: React.FC<{
       <ProTable<playItem>
         columns={columns}
         actionRef={actionRef}
+        rowKey="Id"
+        rowSelection={{
+          selections: [Table.SELECTION_ALL, Table.SELECTION_INVERT],
+          onChange: setRowSelectionKeys,
+        }}
+        tableAlertRender={() => [
+          <Button
+            key="clear"
+            type="dashed"
+            icon={<DeleteFilled />}
+            onClick={batchDelete}
+          >
+            删除已选
+          </Button>,
+        ]}
         toolBarRender={() => {
           return [
             <Button
@@ -178,7 +207,6 @@ const UrlList: React.FC<{
           message.error(res.data.message);
           return {};
         }}
-        rowKey="id"
         dateFormatter="string"
       ></ProTable>
 

@@ -15,4 +15,10 @@ export default {
   update: (data: playItem) => {
     return axios.post<BaseResponseModel>('/api/PlayVideoService/update', data);
   },
+  batchDelete: (ids: React.Key[], room_id: React.Key) => {
+    return axios.post<BaseResponseModel>(`/api/PlayVideoService/BatchDelete`, {
+      ids,
+      room_id,
+    });
+  },
 };
